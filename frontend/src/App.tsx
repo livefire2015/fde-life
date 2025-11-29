@@ -1,5 +1,5 @@
 import { createSignal, createEffect, For, Show } from 'solid-js';
-import { SolidMarkdown } from 'solid-markdown';
+
 
 type Message = {
     role: 'user' | 'assistant';
@@ -92,13 +92,13 @@ function App() {
                         <div class={`mb-4 flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                             <div
                                 class={`max-w-[80%] rounded-2xl px-4 py-2 ${msg.role === 'user'
-                                        ? 'bg-blue-600 text-white rounded-br-none'
-                                        : 'bg-gray-700 text-gray-100 rounded-bl-none'
+                                    ? 'bg-blue-600 text-white rounded-br-none'
+                                    : 'bg-gray-700 text-gray-100 rounded-bl-none'
                                     }`}
                             >
                                 <Show when={msg.role === 'assistant'} fallback={<p>{msg.content}</p>}>
-                                    <div class="prose prose-invert max-w-none text-sm">
-                                        <SolidMarkdown children={msg.content} />
+                                    <div class="prose prose-invert max-w-none text-sm whitespace-pre-wrap">
+                                        {msg.content}
                                     </div>
                                 </Show>
                             </div>
@@ -113,7 +113,7 @@ function App() {
                     </div>
                 </Show>
                 <div ref={messagesEndRef} />
-            </div>
+            </div >
 
             <form onSubmit={handleSubmit} class="flex gap-2">
                 <input
@@ -132,7 +132,7 @@ function App() {
                     Send
                 </button>
             </form>
-        </div>
+        </div >
     );
 }
 
