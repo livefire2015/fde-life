@@ -1,0 +1,31 @@
+openapi: 3.0.0
+info:
+  title: Web AI Chat API
+  version: 1.0.0
+paths:
+  /api/chat:
+    post:
+      summary: Send a chat message
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                messages:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      role:
+                        type: string
+                      content:
+                        type: string
+      responses:
+        '200':
+          description: Stream of chat response
+          content:
+            text/event-stream:
+              schema:
+                type: string

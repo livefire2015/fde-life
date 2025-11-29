@@ -1,0 +1,34 @@
+# Go
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.txt
+coverage.html
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Build output
+bin/
+dist/
+build/
+
+# Air live reload
+tmp/
+
+# Generated protobuf files
+*.pb.go
+*_grpc.pb.go
