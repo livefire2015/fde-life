@@ -63,7 +63,7 @@ class TestChatService(unittest.IsolatedAsyncioTestCase):
             service.client = mock_client_instance # Inject mock
 
             responses = []
-            async for resp in service.StreamChat(request, context):
+            async for resp in service.SampleChat(request, context):
                 responses.append(resp.chunk)
 
             self.assertEqual(responses, ["Hello", " World"])

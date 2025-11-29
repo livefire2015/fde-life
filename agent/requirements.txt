@@ -1,7 +1,8 @@
-# Note: xai-sdk requires Python 3.10+
-# For now, we'll mock the xAI client in tests
+xai-sdk>=1.4.1
 grpcio
 grpcio-tools
 pytest
 pytest-asyncio
 pytest-mock
+python-dotenv
+
