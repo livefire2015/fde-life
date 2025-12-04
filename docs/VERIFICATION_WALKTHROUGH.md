@@ -116,8 +116,7 @@ Files: 24 files changed, 4971 insertions(+)
 ### Python Agent
 ```bash
 cd agent
-source venv/bin/activate
-python -m pytest tests/ -v
+uv run pytest tests/ -v
 ```
 
 ### Go Backend
