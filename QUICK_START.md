@@ -106,6 +106,24 @@ You should see: `Local: http://localhost:3000/`
 | Backend | 8080 | HTTP |
 | Agent | 50051 | gRPC |
 
+## Code Generation
+
+If you modify `proto/chat.proto`, you need to regenerate the code:
+
+### Python (Agent)
+
+```bash
+cd agent
+uv run python -m grpc_tools.protoc -I../proto --python_out=./generated --grpc_python_out=./generated ../proto/chat.proto
+```
+
+### Go (Backend)
+
+```bash
+cd backend
+protoc --go_out=./pb --go-grpc_out=./pb -I../proto ../proto/chat.proto
+```
+
 ## Next Steps
 
 - Read the full [README.md](README.md) for architecture details
