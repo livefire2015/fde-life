@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 import grpc
@@ -14,8 +15,10 @@ import chat_pb2_grpc
 
 import xai_sdk
 from dotenv import load_dotenv
-from xai_sdk.chat import user
+from xai_sdk.chat import user, tool_result
 from xai_sdk.tools import web_search, x_search, code_execution
+
+from mcp_bridge import McpBridge
 
 # Load environment variables
 load_dotenv()
@@ -27,9 +30,17 @@ logger = logging.getLogger(__name__)
 
 
 class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
-    def __init__(self):
+    def __init__(self, mcp_bridge=None):
         self.client = xai_sdk.Client()
         self.model = "grok-4-fast"  # Default model
+        self.mcp_bridge = mcp_bridge
+
+    def _get_tools(self):
+        """Get all available tools including MCP-discovered tools."""
+        tools = [web_search(), x_search(), code_execution()]
+        if self.mcp_bridge:
+            tools.extend(self.mcp_bridge.get_tools())
+        return tools
 
     async def StreamChat(self, request, context):
         logger.info(f"Received request with {len(request.messages)} messages")
@@ -37,25 +48,60 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
         try:
             chat = self.client.chat.create(
                 model="grok-4-fast",
-                tools=[web_search(), x_search(), code_execution()],
+                tools=self._get_tools(),
             )
 
             for msg in request.messages:
                 if msg.role == "user":
                     chat.append(user(msg.content))
 
-            is_thinking = True
-            # Note: chat.stream() is synchronous in the current SDK version
-            for response, chunk in chat.stream():
-                for tool_call in chunk.tool_calls:
+            # Agentic loop: stream, handle client-side tool calls, re-stream
+            while True:
+                is_thinking = True
+                client_tool_calls = []
+
+                # Note: chat.stream() is synchronous in the current SDK version
+                for response, chunk in chat.stream():
+                    for tool_call in chunk.tool_calls:
+                        if (
+                            self.mcp_bridge
+                            and McpBridge.is_client_side_tool_call(tool_call)
+                        ):
+                            client_tool_calls.append(tool_call)
+                            logger.info(
+                                f"MCP tool call: {tool_call.function.name} "
+                                f"with arguments: {tool_call.function.arguments}"
+                            )
+                        else:
+                            logger.info(
+                                f"Server tool: {tool_call.function.name} "
+                                f"with arguments: {tool_call.function.arguments}"
+                            )
+
+                    if chunk.content:
+                        if is_thinking:
+                            is_thinking = False
+                        yield chat_pb2.ChatResponse(chunk=chunk.content)
+
+                # If no client-side tool calls, we're done
+                if not client_tool_calls:
+                    break
+
+                # Append assistant response to history
+                chat.append(response)
+
+                # Execute each MCP tool call and append results
+                for tc in client_tool_calls:
+                    args = json.loads(tc.function.arguments)
+                    result = await self.mcp_bridge.call_tool(
+                        tc.function.name, args
+                    )
+                    chat.append(tool_result(result))
                     logger.info(
-                        f"Calling tool: {tool_call.function.name} with arguments: {tool_call.function.arguments}"
+                        f"MCP tool result for {tc.function.name}: {result[:200]}"
                     )
 
-                if chunk.content:
-                    if is_thinking:
-                        is_thinking = False
-                    yield chat_pb2.ChatResponse(chunk=chunk.content)
+                # Loop continues — model processes tool results and generates more
 
         except Exception as e:
             logger.error(f"Error during streaming: {e}")
@@ -78,17 +124,6 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
             async for token in sampler.sample(
                 messages=conversation, model_name=self.model, stream=True
             ):
-                # The xAI SDK yields token objects.
-                # We need to check the structure based on SDK docs/examples.
-                # Assuming token has .token_str or similar, or is a string.
-                # Based on example: https://github.com/xai-org/xai-sdk-python/blob/main/examples/aio/server_side_tools.py
-                # It seems to yield objects. Let's assume .token or .text
-
-                # Actually, let's look at the example provided in the prompt if possible,
-                # but I can't access external URLs.
-                # I will assume standard xAI SDK usage: token.token_str or just str(token)
-
-                # Let's try to be robust.
                 content = ""
                 if hasattr(token, "token_str"):
                     content = token.token_str
@@ -98,8 +133,6 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
                     content = token
                 else:
                     content = str(token)
-
-                # TODO: Handle "thinking" if the model provides it in a specific field
 
                 yield chat_pb2.ChatResponse(chunk=content)
 
@@ -115,10 +148,27 @@ async def serve():
     import chat_pb2
     import chat_pb2_grpc
 
-    # ChatServiceServicer already inherits from chat_pb2_grpc.ChatServiceServicer
+    # Initialize MCP bridge if server URL is configured
+    mcp_bridge = None
+    mcp_server_url = os.getenv("MCP_SERVER_URL")
+    if mcp_server_url:
+        mcp_bridge = McpBridge(mcp_server_url)
+        try:
+            await mcp_bridge.connect()
+            logger.info(
+                f"Connected to MCP server at {mcp_server_url}, "
+                f"discovered {len(mcp_bridge.get_tools())} tools"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to connect to MCP server: {e}")
+            mcp_bridge = None
+    else:
+        logger.info("No MCP_SERVER_URL set, running without MCP tools")
 
     server = grpc.aio.server(futures.ThreadPoolExecutor(max_workers=10))
-    chat_pb2_grpc.add_ChatServiceServicer_to_server(ChatServiceServicer(), server)
+    chat_pb2_grpc.add_ChatServiceServicer_to_server(
+        ChatServiceServicer(mcp_bridge=mcp_bridge), server
+    )
     listen_addr = "[::]:50051"
     server.add_insecure_port(listen_addr)
     logger.info(f"Starting server on {listen_addr}")
